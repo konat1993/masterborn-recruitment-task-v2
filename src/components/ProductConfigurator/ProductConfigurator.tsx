@@ -150,7 +150,10 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
+  const colorSwatchRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastFocusedElement = useRef<HTMLElement | null>(null);
+  const draftCloseRef = useRef<HTMLButtonElement>(null);
+  const shareCloseRef = useRef<HTMLButtonElement>(null);
 
   // -------------------------------------------------------------------------
   // Derived State
@@ -258,6 +261,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   useEffect(() => {
     if (showDraftModal) {
       getAllDrafts().then(setDrafts);
+      draftCloseRef.current?.focus();
     }
   }, [showDraftModal]);
 
@@ -268,6 +272,12 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       setShareUrl(url);
     }
   }, [showShareModal, currentConfig]);
+
+  useEffect(() => {
+    if (showShareModal) {
+      shareCloseRef.current?.focus();
+    }
+  }, [showShareModal]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -428,11 +438,24 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   const handleModalKeyDown = useCallback(
     (e: React.KeyboardEvent, modalType: 'draft' | 'share') => {
       if (e.key === 'Escape') {
+        e.preventDefault();
         handleModalClose(modalType);
       }
     },
     [handleModalClose],
   );
+
+  const moveColorSelection = (option: ProductOption, currentValue: string, direction: 1 | -1) => {
+    const choices = (option.choices ?? []).filter((choice) => choice.available);
+    if (choices.length === 0) return;
+
+    const currentIndex = choices.findIndex((choice) => choice.value === currentValue);
+    const nextIndex = (currentIndex + direction + choices.length) % choices.length;
+    const nextChoice = choices[nextIndex];
+
+    handleOptionChange(option.id, nextChoice.value);
+    colorSwatchRefs.current[nextChoice.id]?.focus();
+  };
 
   const handleDiscardChanges = useCallback(() => {
     setSelections(getDefaultSelections(product));
@@ -488,17 +511,48 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           role="radiogroup"
           aria-label={option.name}
         >
-          {option.choices?.map((choice, index) => (
-            <div
-              key={index}
-              className={`color-swatch ${currentValue === choice.value ? 'selected' : ''}`}
-              style={{ backgroundColor: choice.colorHex }}
-              onClick={() => !readOnly && handleOptionChange(option.id, choice.value)}
-              title={choice.label}
-              role="radio"
-              aria-checked={currentValue === choice.value}
-            />
-          ))}
+          {option.choices?.map((choice, index) => {
+            const isSelected = currentValue === choice.value;
+            const isTabStop =
+              isSelected ||
+              (!option.choices?.some((item) => item.value === currentValue) && index === 0);
+
+            return (
+              <div
+                key={choice.id}
+                ref={(node) => {
+                  colorSwatchRefs.current[choice.id] = node;
+                }}
+                className={`color-swatch ${isSelected ? 'selected' : ''}`}
+                style={{ backgroundColor: choice.colorHex }}
+                onClick={() =>
+                  !readOnly && choice.available && handleOptionChange(option.id, choice.value)
+                }
+                onKeyDown={(e) => {
+                  if (readOnly || !choice.available) return;
+
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    moveColorSelection(option, currentValue, 1);
+                  }
+
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    moveColorSelection(option, currentValue, -1);
+                  }
+
+                  if (e.key === ' ') {
+                    e.preventDefault();
+                  }
+                }}
+                title={choice.label}
+                aria-label={choice.label}
+                role="radio"
+                aria-checked={isSelected}
+                tabIndex={isTabStop ? 0 : -1}
+              />
+            );
+          })}
         </div>
       </div>
     );
@@ -691,10 +745,19 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         onClick={() => handleModalClose('draft')}
         onKeyDown={(e) => handleModalKeyDown(e, 'draft')}
       >
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="draft-modal-title"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="modal-header">
-            <h3 className="modal-title">Saved Drafts</h3>
+            <h3 id="draft-modal-title" className="modal-title">
+              Saved Drafts
+            </h3>
             <button
+              ref={draftCloseRef}
               className="modal-close"
               onClick={() => handleModalClose('draft')}
               aria-label="Close modal"
@@ -773,10 +836,19 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         onClick={() => handleModalClose('share')}
         onKeyDown={(e) => handleModalKeyDown(e, 'share')}
       >
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="share-modal-title"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="modal-header">
-            <h3 className="modal-title">Share Configuration</h3>
+            <h3 id="share-modal-title" className="modal-title">
+              Share Configuration
+            </h3>
             <button
+              ref={shareCloseRef}
               className="modal-close"
               onClick={() => handleModalClose('share')}
               aria-label="Close modal"
@@ -821,8 +893,8 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         <div className="configurator-actions">
           <button
             className="btn btn-secondary"
-            onClick={() => {
-              lastFocusedElement.current = document.activeElement as HTMLElement;
+            onClick={(e) => {
+              lastFocusedElement.current = e.currentTarget;
               setShowDraftModal(true);
             }}
           >
@@ -830,8 +902,8 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => {
-              lastFocusedElement.current = document.activeElement as HTMLElement;
+            onClick={(e) => {
+              lastFocusedElement.current = e.currentTarget;
               setShowShareModal(true);
             }}
           >
