@@ -6,7 +6,6 @@ import type {
   Configuration,
   Product,
   PriceBreakdown,
-  PriceResponse,
 } from '../components/ProductConfigurator/types';
 import { calculatePrice } from '../services/api';
 
@@ -30,9 +29,9 @@ export function usePriceCalculation(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Track latest request timestamp to prevent stale responses from overwriting newer ones.
-  // Guards against race conditions when the user changes options in rapid succession.
-  const latestRequestRef = useRef<number>(0);
+  // Id of the newest price request. Each call keeps its own id and ignores
+  // the response when a later click has already incremented this ref.
+  const latestRequestRef = useRef(0);
 
   const fetchPrice = useCallback(async () => {
     if (!config) {
@@ -41,27 +40,27 @@ export function usePriceCalculation(
       return;
     }
 
+    const requestId = ++latestRequestRef.current;
+
     setIsLoading(true);
     setError(null);
 
-    const requestTime = Date.now();
-    latestRequestRef.current = requestTime;
-
     try {
-      const response: PriceResponse = await calculatePrice(config, product);
+      const response = await calculatePrice(config, product);
 
-      if (response.timestamp >= latestRequestRef.current) {
-        setPrice(response.breakdown);
-        setFormattedTotal(response.formattedTotal);
-      }
+      if (requestId !== latestRequestRef.current) return;
+
+      setPrice(response.breakdown);
+      setFormattedTotal(response.formattedTotal);
     } catch {
-      // Only set error if this is still the latest request
-      if (requestTime === latestRequestRef.current) {
-        setError('ERR_PRICE_CALC_FAILED');
-        setPrice(null);
-      }
+      if (requestId !== latestRequestRef.current) return;
+
+      setError('ERR_PRICE_CALC_FAILED');
+      setPrice(null);
     } finally {
-      setIsLoading(false);
+      if (requestId === latestRequestRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [config, product]);
 
