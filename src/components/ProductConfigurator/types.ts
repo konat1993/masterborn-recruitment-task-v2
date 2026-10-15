@@ -98,7 +98,6 @@ export interface Draft {
 export interface PriceResponse {
   breakdown: PriceBreakdown;
   formattedTotal: string;
-  timestamp: number;
 }
 
 export interface PreviewResponse {
