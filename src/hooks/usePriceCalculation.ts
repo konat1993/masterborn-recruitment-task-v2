@@ -6,6 +6,7 @@ import type {
   Configuration,
   Product,
   PriceBreakdown,
+  PriceResponse,
 } from '../components/ProductConfigurator/types';
 import { calculatePrice } from '../services/api';
 
@@ -46,7 +47,7 @@ export function usePriceCalculation(
     setError(null);
 
     try {
-      const response = await calculatePrice(config, product);
+      const response: PriceResponse = await calculatePrice(config, product);
 
       if (requestId !== latestRequestRef.current) return;
 
